@@ -3,10 +3,17 @@ import { InjectModel } from '@nestjs/mongoose';
 import { User } from './users.schema';
 import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/user.dto';
+
+interface UserQueryResult {
+  results: User[];
+  currentPage: number;
+  perPage: number;
+  totalPages: number;
+}
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
-
+  constructor(@InjectModel(User.name) private userModel: Model<User>) { }
+  
   async create(payload: CreateUserDto): Promise<User> {
     try {
       const user = new this.userModel({
@@ -25,15 +32,16 @@ export class UsersService {
       throw new Error(err);
     }
   }
-
-  async findAll(page: number, pageSize: number): Promise<User[]> {
+  
+  async findAll(page: number, pageSize: number, name?: string): Promise<any> {
     try {
       const skipAmount = (page - 1) * pageSize;
 
-      return this.userModel
+      const users = await this.userModel
         .find({
           $and: [
             { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] },
+            { name: { $regex: new RegExp(name, 'i') } }
           ],
         })
         .select('-password')
@@ -41,6 +49,27 @@ export class UsersService {
         .skip(skipAmount)
         .limit(pageSize)
         .exec();
+
+      const totalUsers = await this.userModel
+        .countDocuments({
+          $and: [
+            {
+              $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }],
+            },
+          ]})
+        .exec();
+
+      const totalPages = Math.ceil(totalUsers / pageSize);
+
+      const result: UserQueryResult = {
+        results: users,
+        currentPage: page,
+        perPage: pageSize,
+        totalPages: totalPages,
+      };
+  
+      return result;
+
     } catch (err) {
       throw new Error(err);
     }
